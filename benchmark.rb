@@ -7,6 +7,7 @@ require 'time'
 require 'open3'
 require 'timeout'
 require 'shellwords'
+require_relative 'lib/codex_loader'
 
 BASE_DIR = File.expand_path(__dir__)
 WORK_DIR = File.join(BASE_DIR, 'generated')
@@ -47,6 +48,7 @@ TRIALS = 3
 selected_languages = nil
 selected_trials = TRIALS
 selected_start = 1
+selected_codex = nil
 dry_run = false
 
 i = 0
@@ -61,15 +63,37 @@ while i < ARGV.length
   when '--start', '-s'
     selected_start = ARGV[i + 1].to_i
     i += 2
+  when '--codex', '-c'
+    selected_codex = ARGV[i + 1]
+    i += 2
   when '--dry-run'
     dry_run = true
     i += 1
+  when '--help', '-h'
+    puts <<~HELP
+      Usage: ruby benchmark.rb [OPTIONS]
+
+      Options:
+        --lang, -l LANGS       Comma-separated list of languages to test
+        --trials, -t NUM       Number of trials per language (default: #{TRIALS})
+        --start, -s NUM        Starting trial number (default: 1)
+        --codex, -c NAME       AI codex to use: #{CodexLoader.available_codexes.join(', ')} (default: #{CodexLoader.default_codex})
+        --dry-run              Dry run mode (don't actually run codex)
+        --help, -h             Show this help message
+
+      Examples:
+        ruby benchmark.rb --lang python --trials 1
+        ruby benchmark.rb --codex gemini --lang ruby,python
+        ruby benchmark.rb --trials 10 --start 11
+    HELP
+    exit 0
   else
     i += 1
   end
 end
 
 languages_to_run = selected_languages || LANGUAGES.keys
+selected_codex ||= CodexLoader.default_codex
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -102,7 +126,6 @@ end
 def extra_path
   "#{GO_DIR}/bin:#{NPM_PREFIX}/bin"
 end
-
 
 def get_version(lang)
   config = LANGUAGES[lang]
@@ -141,51 +164,6 @@ def count_loc(dir, lang)
   end
 end
 
-def parse_claude_output(raw_output)
-  raw_output = raw_output.dup.force_encoding('UTF-8')
-  events = JSON.parse(raw_output.strip)
-  events = [events] unless events.is_a?(Array)
-  result_event = events.reverse.find { |e| e.is_a?(Hash) && e['type'] == 'result' }
-  return nil unless result_event
-
-  usage = result_event['usage'] || {}
-  {
-    input_tokens: usage['input_tokens'] || 0,
-    output_tokens: usage['output_tokens'] || 0,
-    cache_creation_tokens: usage['cache_creation_input_tokens'] || 0,
-    cache_read_tokens: usage['cache_read_input_tokens'] || 0,
-    cost_usd: result_event['total_cost_usd'] || 0.0,
-    num_turns: result_event['num_turns'] || 0,
-    duration_ms: result_event['duration_ms'] || 0,
-  }
-rescue JSON::ParserError => e
-  puts "  WARNING: Failed to parse Claude JSON output: #{e.message}"
-  nil
-end
-
-def run_claude(prompt, dir:, log_path: nil)
-  env_prefix = "unset CLAUDECODE && export PATH=#{extra_path}:$PATH && "
-  cmd = "#{env_prefix}claude -p #{Shellwords.escape(prompt)} --dangerously-skip-permissions --output-format json"
-
-  puts "  Running Claude..."
-  start_time = Time.now
-  result = run_cmd(cmd, dir: dir, timeout: 1200)
-  elapsed = Time.now - start_time
-
-  if log_path
-    FileUtils.mkdir_p(File.dirname(log_path))
-    File.write(log_path, result[:stdout])
-    puts "  Log saved to #{log_path}"
-  end
-
-  {
-    stdout: result[:stdout],
-    stderr: result[:stderr],
-    success: result[:success],
-    elapsed_seconds: elapsed.round(1),
-    claude_data: parse_claude_output(result[:stdout]),
-  }
-end
 
 def run_tests(test_script, dir:)
   cmd = "export PATH=#{extra_path}:$PATH && bash #{test_script}"
@@ -209,20 +187,20 @@ end
 # ---------------------------------------------------------------------------
 
 puts '=' * 60
-puts 'Claude Code Language Benchmark'
+puts 'AI Coding Language Benchmark'
 puts '=' * 60
 puts
 
-claude_version_result = run_cmd('claude --version 2>/dev/null || echo unknown')
-claude_version = claude_version_result[:stdout].strip
+# Initialize codex
+codex = CodexLoader.create_codex(selected_codex)
+codex_version = codex.version
 
-puts "Claude Version: #{claude_version}"
+puts "Codex: #{selected_codex}"
+puts "Codex Version: #{codex_version}"
 puts "Languages: #{languages_to_run.join(', ')}"
 puts "Trials: #{selected_start}..#{selected_start + selected_trials - 1} (#{selected_trials} trials)"
 puts "Dry run: #{dry_run}"
 puts
-
-
 
 # Language versions
 puts '--- Language Versions ---'
@@ -237,13 +215,12 @@ puts
 FileUtils.mkdir_p(WORK_DIR)
 FileUtils.mkdir_p(RESULTS_DIR)
 
-# Warmup: run a trivial prompt so Claude's process/cache is hot
+# Warmup: run a trivial prompt so codex's process/cache is hot
 unless dry_run
   puts '--- Warmup ---'
   warmup_dir = File.join(WORK_DIR, '.warmup')
   FileUtils.mkdir_p(warmup_dir)
-  warmup_result = run_claude('Respond with just the word OK.', dir: warmup_dir)
-  puts "  Warmup done in #{warmup_result[:elapsed_seconds]}s (success=#{warmup_result[:success]})"
+  codex.warmup(warmup_dir)
   FileUtils.rm_rf(warmup_dir)
   puts
 end
@@ -265,10 +242,10 @@ selected_trials.times do |trial_idx|
     FileUtils.mkdir_p(v1_dir)
 
     record = {
-      language: lang, trial: trial, v1_dir: v1_dir, v2_dir: v2_dir,
+      language: lang, trial: trial, codex: selected_codex, v1_dir: v1_dir, v2_dir: v2_dir,
       v1_time: nil, v1_pass: false, v1_passed_count: 0, v1_failed_count: 0, v1_total_count: 0, v1_loc: 0,
       v2_time: nil, v2_pass: false, v2_passed_count: 0, v2_failed_count: 0, v2_total_count: 0, v2_loc: 0,
-      v1_claude: nil, v2_claude: nil,
+      v1_metrics: nil, v2_metrics: nil,
     }
 
     # --- Phase 1: v1 ---
@@ -284,14 +261,15 @@ selected_trials.times do |trial_idx|
     v1_prompt += " #{LANGUAGES[lang][:extra_prompt]}" if LANGUAGES[lang][:extra_prompt]
 
     if dry_run
-      puts "  [DRY RUN] Would run Claude with prompt for v1 #{lang}"
+      puts "  [DRY RUN] Would run #{selected_codex} with prompt for v1 #{lang}"
       record[:v1_time] = 0
     else
-      v1_log = File.join(LOGS_DIR, "minigit-#{dir_name}-#{trial}-v1.json")
-      v1_result = run_claude(v1_prompt, dir: v1_dir, log_path: v1_log)
+      v1_log = File.join(LOGS_DIR, "minigit-#{dir_name}-#{trial}-v1-#{selected_codex}.json")
+      puts "  Running #{selected_codex}..."
+      v1_result = codex.run_generation(v1_prompt, dir: v1_dir, log_path: v1_log)
       record[:v1_time] = v1_result[:elapsed_seconds]
-      record[:v1_claude] = v1_result[:claude_data]
-      puts "  Claude finished in #{v1_result[:elapsed_seconds]}s (success=#{v1_result[:success]})"
+      record[:v1_metrics] = v1_result[:metrics]
+      puts "  #{selected_codex.capitalize} finished in #{v1_result[:elapsed_seconds]}s (success=#{v1_result[:success]})"
 
       puts '  Running v1 tests...'
       test_result = run_tests('test-v1.sh', dir: v1_dir)
@@ -317,14 +295,15 @@ selected_trials.times do |trial_idx|
     v2_prompt += " #{LANGUAGES[lang][:extra_prompt]}" if LANGUAGES[lang][:extra_prompt]
 
     if dry_run
-      puts "  [DRY RUN] Would run Claude with prompt for v2 #{lang}"
+      puts "  [DRY RUN] Would run #{selected_codex} with prompt for v2 #{lang}"
       record[:v2_time] = 0
     else
-      v2_log = File.join(LOGS_DIR, "minigit-#{dir_name}-#{trial}-v2.json")
-      v2_result = run_claude(v2_prompt, dir: v2_dir, log_path: v2_log)
+      v2_log = File.join(LOGS_DIR, "minigit-#{dir_name}-#{trial}-v2-#{selected_codex}.json")
+      puts "  Running #{selected_codex}..."
+      v2_result = codex.run_generation(v2_prompt, dir: v2_dir, log_path: v2_log)
       record[:v2_time] = v2_result[:elapsed_seconds]
-      record[:v2_claude] = v2_result[:claude_data]
-      puts "  Claude finished in #{v2_result[:elapsed_seconds]}s (success=#{v2_result[:success]})"
+      record[:v2_metrics] = v2_result[:metrics]
+      puts "  #{selected_codex.capitalize} finished in #{v2_result[:elapsed_seconds]}s (success=#{v2_result[:success]})"
 
       puts '  Running v2 tests...'
       test_result = run_tests('test-v2.sh', dir: v2_dir)
@@ -354,7 +333,8 @@ puts '=' * 60
 # Save metadata alongside results
 meta = {
   date: Time.now.strftime('%Y-%m-%d %H:%M:%S'),
-  claude_version: claude_version,
+  codex: selected_codex,
+  codex_version: codex_version,
   trials: selected_trials,
   versions: versions,
 }

@@ -1,2 +1,5 @@
 generated/
 logs/
+.env
+config/codexes.local.yml
+_doc/

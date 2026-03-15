@@ -1,8 +1,8 @@
-# Claude Code Language Benchmark
+# AI Coding Language Benchmark
 
 ## Overview
 
-Benchmark that has Claude Code (Opus) implement "MiniGit" (a minimal git clone) in multiple languages, comparing generation time, LOC, token usage, and pass rate.
+Multi-codex benchmark that has various AI coding assistants (Claude Code, Gemini, etc.) implement "MiniGit" (a minimal git clone) in multiple languages, comparing generation time, LOC, token usage, and pass rate.
 
 ## Repository Structure
 
@@ -45,13 +45,41 @@ logs/                # Claude JSON output logs
 ## Key Commands
 
 ```bash
-ruby benchmark.rb                                    # All languages x 3 trials
+ruby benchmark.rb                                    # All languages x 3 trials (default: claude)
 ruby benchmark.rb --lang python --trials 1           # Single language test
+ruby benchmark.rb --codex gemini --lang ruby         # Use Gemini instead of Claude
 ruby benchmark.rb --trials 10 --start 11             # Trials 11-20
-ruby benchmark.rb --dry-run                           # Dry run
-ruby report.rb                                        # Generate report
-python3 plot.py                                       # Generate graphs
+ruby benchmark.rb --dry-run                          # Dry run
+ruby benchmark.rb --help                             # Show all options
+ruby report.rb                                       # Generate report
+python3 plot.py                                      # Generate graphs
 ```
+
+## Multi-Codex Architecture
+
+The benchmark uses an adapter pattern to support multiple AI coding systems:
+
+```
+lib/
+  codexes/
+    base_codex.rb         # Abstract interface
+    claude_codex.rb       # Claude Code CLI adapter
+    gemini_codex.rb       # Google Gemini API adapter
+  codex_loader.rb         # Loads and instantiates adapters
+config/
+  codexes.yml             # Codex configuration
+```
+
+Each codex adapter implements:
+- `run_generation(prompt, dir:, log_path:)` - Generate code
+- `version` - Get codex version
+- `warmup(warmup_dir)` - Optional warmup
+- `parse_metrics(raw_output)` - Extract token/cost data
+
+To add a new codex:
+1. Create `lib/codexes/your_codex.rb` extending `BaseCodex`
+2. Add configuration to `config/codexes.yml`
+3. Run: `ruby benchmark.rb --codex your_codex`
 
 ## Supported Languages (LANGUAGES hash in benchmark.rb)
 

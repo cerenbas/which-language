@@ -354,7 +354,7 @@
       "output_tokens": 2163,
       "cache_creation_tokens": 13874,
       "cache_read_tokens": 127075,
-      "cost_usd": 0.20436000000000001,
+      "cost_usd": 0.20436,
       "num_turns": 7,
       "duration_ms": 37572
     }
@@ -5961,7 +5961,7 @@
       "output_tokens": 2696,
       "cache_creation_tokens": 8872,
       "cache_read_tokens": 147315,
-      "cost_usd": 0.19654750000000001,
+      "cost_usd": 0.1965475,
       "num_turns": 8,
       "duration_ms": 41200
     },
@@ -10798,5 +10798,26 @@
       "num_turns": 11,
       "duration_ms": 70386
     }
+  },
+  {
+    "language": "python",
+    "trial": 1,
+    "codex": "claude",
+    "v1_dir": "/home/seyyah/works/engiz/ai-coding-lang-bench/generated/minigit-python-1-v1",
+    "v2_dir": "/home/seyyah/works/engiz/ai-coding-lang-bench/generated/minigit-python-1-v2",
+    "v1_time": 0,
+    "v1_pass": false,
+    "v1_passed_count": 0,
+    "v1_failed_count": 0,
+    "v1_total_count": 0,
+    "v1_loc": 0,
+    "v2_time": 0,
+    "v2_pass": false,
+    "v2_passed_count": 0,
+    "v2_failed_count": 0,
+    "v2_total_count": 0,
+    "v2_loc": 0,
+    "v1_metrics": null,
+    "v2_metrics": null
   }
 ]

@@ -1,8 +1,12 @@
 # Which Programming Language Is Best for AI Coding Agents?
 
-A quantitative benchmark comparing how efficiently [Claude Code](https://docs.anthropic.com/en/docs/claude-code) generates code across 13 programming languages.
+A quantitative benchmark comparing how efficiently various AI coding assistants generate code across multiple programming languages.
 
-For a detailed discussion, see the blog post: [Which Programming Language Is Best for Claude Code?](https://dev.to/mame/which-programming-language-is-best-for-claude-code-508a) / [日本語版](https://zenn.dev/mametter/articles/3e8580ec034201)
+**Originally** a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) benchmark, now supports multiple AI codexes including **Google Gemini**.
+
+> **Quick Start**: See [QUICK_START.md](./QUICK_START.md) for setup instructions.
+
+For the original Claude Code benchmark discussion, see: [Which Programming Language Is Best for Claude Code?](https://dev.to/mame/which-programming-language-is-best-for-claude-code-508a) / [日本語版](https://zenn.dev/mametter/articles/3e8580ec034201)
 
 ## TL;DR
 
@@ -125,13 +129,44 @@ For real projects, framework availability matters — and if runtime speed is es
 ## Reproducing
 
 ```bash
-ruby benchmark.rb                           # Run all languages × 3 trials
-ruby benchmark.rb --lang python --trials 1  # Single language quick test
-ruby report.rb                              # Generate results/report.md
-python3 plot.py                             # Generate figures/*.png
+ruby benchmark.rb                                # Run all languages × 3 trials (default: Claude)
+ruby benchmark.rb --lang python --trials 1       # Single language quick test
+ruby benchmark.rb --codex gemini --trials 5      # Use Gemini instead of Claude
+ruby benchmark.rb --help                         # Show all options
+ruby report.rb                                   # Generate results/report.md
+python3 plot.py                                  # Generate figures/*.png
 ```
 
-Requirements: Ruby, Claude Code CLI (`claude`), and the target language toolchains.
+Requirements: Ruby, and the target language toolchains.
+
+### Multi-Codex Support
+
+This benchmark now supports multiple AI code generation systems:
+
+- **Claude Code** (default): Uses the `claude` CLI tool
+- **Gemini**: Uses Google Gemini API (requires `GOOGLE_API_KEY` environment variable)
+
+To configure codexes, edit `config/codexes.yml`:
+
+```yaml
+codexes:
+  claude:
+    enabled: true
+    # ...
+  gemini:
+    enabled: true  # Change to true to enable
+    config:
+      api_key: "${GOOGLE_API_KEY}"  # Or set directly
+```
+
+Run with a specific codex:
+
+```bash
+ruby benchmark.rb --codex claude --lang python
+ruby benchmark.rb --codex gemini --lang python
+```
+
+Adding new codexes is straightforward — create an adapter in `lib/codexes/` implementing the `BaseCodex` interface.
 
 ### Repository Structure
 

@@ -1,0 +1,31 @@
+# AI Codex Configuration
+# This file defines the available AI codexes for the benchmark
+
+codexes:
+  claude:
+    enabled: true
+    class: ClaudeCodex
+    config:
+      # Path additions for Go, npm, etc.
+      # This will be expanded to actual home directory path
+      extra_path: "$HOME/.local/go/bin:$HOME/.local/npm/bin"
+
+  gemini:
+    enabled: false
+    class: GeminiCodex
+    config:
+      # Get your API key from https://ai.google.dev/
+      api_key: "${GOOGLE_API_KEY}"  # Or set directly: "your-api-key-here"
+      model_name: "gemini-3.1-flash-lite-preview"
+      cooldown_seconds: 1.2
+
+  # Template for future codexes
+  # openai:
+  #   enabled: false
+  #   class: OpenAICodex
+  #   config:
+  #     api_key: "${OPENAI_API_KEY}"
+  #     model_name: "gpt-4o"
+
+# Default codex to use when --codex flag is not specified
+default: claude
